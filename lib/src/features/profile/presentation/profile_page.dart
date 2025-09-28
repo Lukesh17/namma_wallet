@@ -1,18 +1,22 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:namma_wallet/src/common/routing/app_routes.dart';
-import 'package:namma_wallet/src/features/profile/presentation/sample_contributors_data.dart';
+import 'package:namma_wallet/src/features/profile/data/sample_contributors_data.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ----------------- Model -----------------
 class Contributor {
+  final String name;
+  final String avatarUrl;
+  final String profileUrl;
   Contributor({
     required this.name,
     required this.avatarUrl,
     required this.profileUrl,
   });
-
   factory Contributor.fromJson(Map<String, dynamic> json) {
     return Contributor(
       name: json['login'] as String,
@@ -20,93 +24,79 @@ class Contributor {
       profileUrl: json['html_url'] as String,
     );
   }
-  final String name;
-  final String avatarUrl;
-  final String profileUrl;
 }
-
 // ----------------- Profile Page -----------------
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
-
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
-
 class _ProfilePageState extends State<ProfilePage> {
-  late Future<List<Contributor>> _contributorsFuture;
-
+  List<Contributor> contributors = [];
   @override
   void initState() {
     super.initState();
-    _contributorsFuture = _fetchContributors();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      contributors = await _fetchContributors();
+      setState(() {});
+    });
   }
-
   Future<List<Contributor>> _fetchContributors() async {
-    await Future.delayed(const Duration(seconds: 2));
-
-    return sample_contributors_data.map(Contributor.fromJson).toList();
-    // final response = await http.get(
-    //   Uri.parse(
-    //       'https://api.github.com/repos/Namma-Flutter/namma_wallet/contributors'),
-    // );
-    //
-    // if (response.statusCode == 200) {
-    //   final body = response.body as List<Map<String, dynamic>>;
-    //   return body.map((json) => Contributor.fromJson(json)).toList();
-    // } else {
-    //   throw Exception('Failed to load contributors');
-    // }
+    final response = await http.get(
+      Uri.parse(
+          'https://api.github.com/repos/Namma-Flutter/namma_wallet/contributors'),
+    );
+    var body = json.decode(response.body) as List;
+    return body
+        .map((json) => Contributor.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
       ),
-      body: FutureBuilder<List<Contributor>>(
-        future: _contributorsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('No contributors found.'));
-          }
-
-          final contributors = snapshot.data!;
-          print('contributors : $contributors');
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: contributors.length,
-            itemBuilder: (context, index) {
-              final contributor = contributors[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: NetworkImage(contributor.avatarUrl),
-                    radius: 24,
-                  ),
-                  title: Text(contributor.name),
-                  subtitle: Text(contributor.profileUrl),
-                  onTap: () {
-                    // You can integrate url_launcher here
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text('Open: ${contributor.profileUrl}')),
-                    );
-                  },
-                ),
-              );
-            },
-          );
-        },
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Contributors",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(12),
+                itemCount: contributors.length,
+                itemBuilder: (context, index) {
+                  final contributor = contributors[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: NetworkImage(contributor.avatarUrl),
+                        radius: 24,
+                      ),
+                      title: Text(contributor.name),
+                      subtitle: Text(contributor.profileUrl),
+                      onTap: () async {
+                        final uri = Uri.parse(contributor.profileUrl);
+                        if (await canLaunchUrl(uri)) await launchUrl(uri);
+                      },
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
